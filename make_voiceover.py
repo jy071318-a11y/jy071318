@@ -55,10 +55,12 @@ def tts_edge(text, out, voice):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", choices=["elevenlabs", "edge"], default="elevenlabs")
-    ap.add_argument("--voice", default="21m00Tcm4TlvDq8ikWAM")  # ElevenLabs 'Rachel' (다국어 지원)
+    ap.add_argument("--voice", default="EXAVITQu4vr4xnSDxMaL")  # ElevenLabs 기본 음성 'Sarah' (무료 플랜 API 사용 가능)
     ap.add_argument("--video", default=str(DL / "KDIS_시연_자막편집_초안.mp4"))
     ap.add_argument("--srt", default=str(DL / "KDIS_시연_자막.srt"))
     ap.add_argument("--out", default="KDIS_시연_음성포함.mp4")
+    ap.add_argument("--bgm", help="배경음 mp3 경로 (생략하면 배경음 없음)")
+    ap.add_argument("--bgm-volume", type=float, default=0.25, help="배경음 크기 (0.15 아주 작게 / 0.25 적당히 / 0.35 조금 크게)")
     a = ap.parse_args()
 
     cues = parse_srt(Path(a.srt))
@@ -82,7 +84,16 @@ def main():
             print(f"  #{i + 1} 길이 초과 -> {speed:.2f}배속")
 
     mix = "".join(f"[a{i}]" for i in range(len(cues)))
-    fc = ";".join(filters) + f";{mix}amix=inputs={len(cues)}:normalize=0,loudnorm=I=-16:TP=-1.5[aout]"
+    fc = ";".join(filters) + f";{mix}amix=inputs={len(cues)}:normalize=0"
+    if a.bgm:
+        # 배경음: 영상 길이만큼 반복, 앞뒤 페이드, 내레이션이 나올 때 자동으로 작아짐(ducking)
+        inputs += ["-stream_loop", "-1", "-i", a.bgm]
+        fade_out = max(video_len - 4, 0)
+        fc += (f",asplit=2[voice][key];"
+               f"[{len(cues) + 1}:a]volume={a.bgm_volume},afade=t=in:d=2,afade=t=out:st={fade_out:.2f}:d=4[bgm];"
+               f"[bgm][key]sidechaincompress=threshold=0.02:ratio=6:attack=30:release=600[ducked];"
+               f"[voice][ducked]amix=inputs=2:normalize=0")
+    fc += ",loudnorm=I=-16:TP=-1.5[aout]"
     cmd = [FFMPEG, "-y", "-i", a.video, *inputs, "-filter_complex", fc,
            "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
            "-t", f"{video_len:.3f}", a.out]
