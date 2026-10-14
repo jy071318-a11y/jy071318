@@ -1,0 +1,5 @@
+﻿# Media outputs
+*.mp4
+*.mp3
+tts_clips_*/
+__pycache__/
